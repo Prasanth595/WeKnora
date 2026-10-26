@@ -2054,13 +2054,21 @@ func (s *knowledgeService) processQuestionGenerationForKnowledge(ctx context.Con
 	})
 
 	// Initialize chat model
-	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
+	processOverrides, _ := knowledge.ProcessOverrides()
+	questionGenCfg := ResolveProcessConfig(kb, processOverrides).QuestionGenerationConfig
+	questionModelID, err := resolveQuestionGenerationModel(ctx, s.modelService, kb, processOverrides)
+	if err != nil {
+		exitStatus = "question_model_invalid"
+		qErr = err
+		return err
+	}
+	chatModel, err := s.modelService.GetChatModel(ctx, questionModelID)
 	if err != nil {
 		exitStatus = "get_chat_model_failed"
 		logger.Errorf(ctx, "Failed to get chat model: %v", err)
 		return fmt.Errorf("failed to get chat model: %w", err)
 	}
-	resolvedModelID = kb.SummaryModelID
+	resolvedModelID = questionModelID
 
 	// Initialize embedding model and retrieval engine
 	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
@@ -2094,8 +2102,6 @@ func (s *knowledgeService) processQuestionGenerationForKnowledge(ctx context.Con
 		questionCount = 10
 	}
 
-	processOverrides, _ := knowledge.ProcessOverrides()
-	questionGenCfg := ResolveProcessConfig(kb, processOverrides).QuestionGenerationConfig
 	customInstructions := questionGenCfg.CustomInstructions
 
 	// Collect image info for all text chunks so question generation can
@@ -2378,13 +2384,21 @@ func (s *knowledgeService) processQuestionGenerationForChunks(ctx context.Contex
 		}
 	}
 
-	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
+	processOverrides, _ := knowledge.ProcessOverrides()
+	questionGenCfg := ResolveProcessConfig(kb, processOverrides).QuestionGenerationConfig
+	questionModelID, err := resolveQuestionGenerationModel(ctx, s.modelService, kb, processOverrides)
+	if err != nil {
+		exitStatus = "question_model_invalid"
+		qErr = err
+		return err
+	}
+	chatModel, err := s.modelService.GetChatModel(ctx, questionModelID)
 	if err != nil {
 		exitStatus = "get_chat_model_failed"
 		logger.Errorf(ctx, "Failed to get chat model: %v", err)
 		return fmt.Errorf("failed to get chat model: %w", err)
 	}
-	resolvedModelID = kb.SummaryModelID
+	resolvedModelID = questionModelID
 
 	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
 	if err != nil {
@@ -2417,8 +2431,6 @@ func (s *knowledgeService) processQuestionGenerationForChunks(ctx context.Contex
 		questionCount = 10
 	}
 
-	processOverrides, _ := knowledge.ProcessOverrides()
-	questionGenCfg := ResolveProcessConfig(kb, processOverrides).QuestionGenerationConfig
 	customInstructions := questionGenCfg.CustomInstructions
 
 	// Fetch the batch chunks (in payload order) plus the two boundary
@@ -2675,10 +2687,15 @@ func (s *knowledgeService) RegenerateChunkQuestions(
 	if knowledge.KnowledgeBaseID != chunk.KnowledgeBaseID || chunk.TenantID != knowledge.TenantID {
 		return nil, werrors.NewForbiddenError("chunk does not belong to its knowledge document")
 	}
-	if kb.SummaryModelID == "" {
-		return nil, fmt.Errorf("summary model is required for question generation")
+	overrides, _ := knowledge.ProcessOverrides()
+	questionModelID, err := resolveQuestionGenerationModel(ctx, s.modelService, kb, overrides)
+	if err != nil {
+		return nil, err
 	}
-	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
+	if questionModelID == "" {
+		return nil, fmt.Errorf("a chat model is required for question generation")
+	}
+	chatModel, err := s.modelService.GetChatModel(ctx, questionModelID)
 	if err != nil {
 		return nil, err
 	}
@@ -2692,7 +2709,6 @@ func (s *knowledgeService) RegenerateChunkQuestions(
 		}
 		return neighbor.Content
 	}
-	overrides, _ := knowledge.ProcessOverrides()
 	config := ResolveProcessConfig(kb, overrides).QuestionGenerationConfig
 	count := config.QuestionCount
 	if count <= 0 {
