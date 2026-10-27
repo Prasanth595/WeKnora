@@ -156,7 +156,9 @@ func TestStreamFinalAnswer_DisablesThinking(t *testing.T) {
 				thinking := configured == "enabled"
 				engine.config.Thinking = &thinking
 			}
-			model.synthesize = func(_ context.Context, _ []chat.Message, opts *chat.ChatOptions) (<-chan types.StreamResponse, error) {
+			model.synthesize = func(
+				_ context.Context, _ []chat.Message, opts *chat.ChatOptions,
+			) (<-chan types.StreamResponse, error) {
 				level, requested := opts.Reasoning()
 				require.True(t, requested, "final synthesis must override the provider default")
 				require.Equal(t, api.ReasoningOff, level)
