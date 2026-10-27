@@ -147,6 +147,7 @@ type rawToolCall struct {
 type rawMessage struct {
 	Role             string            `json:"role,omitempty"`
 	Content          string            `json:"content,omitempty"`
+	Refusal          string            `json:"refusal,omitempty"`
 	ReasoningContent string            `json:"reasoning_content,omitempty"`
 	Reasoning        string            `json:"reasoning,omitempty"`
 	ReasoningText    string            `json:"reasoning_text,omitempty"`
@@ -295,6 +296,9 @@ func (c *Client) parseResponse(raw []byte) (*types.ChatResponse, error) {
 	}
 	choice := env.Choices[0]
 	content, inlineReasoning := splitThinkTags(choice.Message.Content)
+	// Refusals are answer text in a separate protocol field, often with null
+	// content. Preserve them for consumers that only read ChatResponse.Content.
+	content += choice.Message.Refusal
 	result := &types.ChatResponse{
 		Content:          content,
 		ReasoningContent: c.reasoningText(choice.Message),
@@ -410,7 +414,7 @@ func (c *Client) processStream(
 		choice := env.Choices[0]
 		delta := api.Delta{
 			Reasoning:    c.reasoningText(choice.Delta),
-			Content:      choice.Delta.Content,
+			Content:      choice.Delta.Content + choice.Delta.Refusal,
 			FinishReason: choice.FinishReason,
 		}
 		if len(choice.Delta.ReasoningDetails) > 0 {
